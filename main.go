@@ -29,6 +29,7 @@ func main() {
 		}
 	}()
 
+	var l []prompb.Label
 	for {
 		s, err := probe()
 		if err != nil {
@@ -38,11 +39,27 @@ func main() {
 			}
 		}
 
-		wr := statisticsToWriteRequest(s)
+		nl, err := updateLabels(l)
+		if err != nil {
+			println(err.Error())
+		} else {
+			l = nl
+		}
+
+		wr := statisticsToWriteRequest(s, l)
 		wrb <- wr
 
 		time.Sleep(time.Second * 10)
 	}
+}
+
+func updateLabels(labels []prompb.Label) ([]prompb.Label, error) {
+	return []prompb.Label{
+		{
+			Name:  "client_id",
+			Value: os.Getenv("PINGPG_CLIENTID"),
+		},
+	}, nil
 }
 
 func publishWithRetry(wr *prompb.WriteRequest) {
@@ -80,19 +97,15 @@ func publish(wr *prompb.WriteRequest) error {
 	return nil
 }
 
-func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
+func statisticsToWriteRequest(s *probing.Statistics, l []prompb.Label) *prompb.WriteRequest {
 	now := timestamp.FromTime(time.Now().UTC())
-	return &prompb.WriteRequest{
+	wr := &prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
 			{
 				Labels: []prompb.Label{
 					{
 						Name:  "__name__",
 						Value: "min_rtt_ns",
-					},
-					{
-						Name:  "exported_job",
-						Value: os.Getenv("PINGPG_CLIENTID"),
 					},
 				},
 				Samples: []prompb.Sample{
@@ -108,10 +121,6 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 						Name:  "__name__",
 						Value: "max_rtt_ns",
 					},
-					{
-						Name:  "exported_job",
-						Value: os.Getenv("PINGPG_CLIENTID"),
-					},
 				},
 				Samples: []prompb.Sample{
 					{
@@ -125,10 +134,6 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 					{
 						Name:  "__name__",
 						Value: "avg_rtt_ns",
-					},
-					{
-						Name:  "exported_job",
-						Value: os.Getenv("PINGPG_CLIENTID"),
 					},
 				},
 				Samples: []prompb.Sample{
@@ -144,10 +149,6 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 						Name:  "__name__",
 						Value: "std_dev_rtt_ns",
 					},
-					{
-						Name:  "exported_job",
-						Value: os.Getenv("PINGPG_CLIENTID"),
-					},
 				},
 				Samples: []prompb.Sample{
 					{
@@ -162,10 +163,6 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 						Name:  "__name__",
 						Value: "packet_loss",
 					},
-					{
-						Name:  "exported_job",
-						Value: os.Getenv("PINGPG_CLIENTID"),
-					},
 				},
 				Samples: []prompb.Sample{
 					{
@@ -176,6 +173,12 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 			},
 		},
 	}
+
+	for i, ts := range wr.Timeseries {
+		wr.Timeseries[i].Labels = append(ts.Labels, l...)
+	}
+
+	return wr
 }
 
 func probe() (*probing.Statistics, error) {
