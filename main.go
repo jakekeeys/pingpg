@@ -84,7 +84,7 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 				Labels: []prompb.Label{
 					{
 						Name:  "__name__",
-						Value: "min_rtt_ms",
+						Value: "min_rtt_ns",
 					},
 					{
 						Name:  "exported_job",
@@ -93,7 +93,7 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 				},
 				Samples: []prompb.Sample{
 					{
-						Value:     float64(s.MinRtt.Milliseconds()),
+						Value:     float64(s.MinRtt.Nanoseconds()),
 						Timestamp: now,
 					},
 				},
@@ -102,7 +102,7 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 				Labels: []prompb.Label{
 					{
 						Name:  "__name__",
-						Value: "max_rtt_ms",
+						Value: "max_rtt_ns",
 					},
 					{
 						Name:  "exported_job",
@@ -111,7 +111,7 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 				},
 				Samples: []prompb.Sample{
 					{
-						Value:     float64(s.MaxRtt.Milliseconds()),
+						Value:     float64(s.MaxRtt.Nanoseconds()),
 						Timestamp: now,
 					},
 				},
@@ -120,7 +120,7 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 				Labels: []prompb.Label{
 					{
 						Name:  "__name__",
-						Value: "avg_rtt_ms",
+						Value: "avg_rtt_ns",
 					},
 					{
 						Name:  "exported_job",
@@ -129,7 +129,7 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 				},
 				Samples: []prompb.Sample{
 					{
-						Value:     float64(s.AvgRtt.Milliseconds()),
+						Value:     float64(s.AvgRtt.Nanoseconds()),
 						Timestamp: now,
 					},
 				},
@@ -147,7 +147,7 @@ func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
 				},
 				Samples: []prompb.Sample{
 					{
-						Value:     float64(s.StdDevRtt.Milliseconds()),
+						Value:     float64(s.StdDevRtt.Nanoseconds()),
 						Timestamp: now,
 					},
 				},
