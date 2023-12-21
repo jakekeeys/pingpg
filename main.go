@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http/httputil"
 	"strconv"
+	"sync"
 
 	"net/http"
 	"os"
@@ -40,6 +41,22 @@ func main() {
 		panic(err)
 	}
 
+	var lm sync.Mutex
+	ticker := time.NewTicker(60 * time.Second)
+	go func() {
+		for range ticker.C {
+			nl, err := getLabels()
+			if err != nil {
+				println(err)
+				continue
+			}
+
+			lm.Lock()
+			l = nl
+			lm.Unlock()
+		}
+	}()
+
 	for {
 		s, err := probe()
 		if err != nil {
@@ -49,7 +66,9 @@ func main() {
 			}
 		}
 
+		lm.Lock()
 		wr := statisticsToWriteRequest(s, l)
+		lm.Unlock()
 		wrb <- wr
 
 		time.Sleep(time.Second * 10)
