@@ -3,11 +3,16 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 	probing "github.com/prometheus-community/pro-bing"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
+	"io"
+	"net/http/httputil"
+	"strconv"
 
 	"net/http"
 	"os"
@@ -29,7 +34,11 @@ func main() {
 		}
 	}()
 
-	var l []prompb.Label
+	l, err := getLabels()
+	if err != nil {
+		panic(err)
+	}
+
 	for {
 		s, err := probe()
 		if err != nil {
@@ -39,13 +48,6 @@ func main() {
 			}
 		}
 
-		nl, err := updateLabels(l)
-		if err != nil {
-			println(err.Error())
-		} else {
-			l = nl
-		}
-
 		wr := statisticsToWriteRequest(s, l)
 		wrb <- wr
 
@@ -53,11 +55,90 @@ func main() {
 	}
 }
 
-func updateLabels(labels []prompb.Label) ([]prompb.Label, error) {
+func getLabels() ([]prompb.Label, error) {
+	resp, err := http.Get("http://ip-api.com/json/?fields=66846719")
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		respOut, _ := httputil.DumpResponse(resp, true)
+		return nil, errors.New(string(respOut))
+	}
+
+	type RM struct {
+		Status        string  `json:"status"`
+		Continent     string  `json:"continent"`
+		ContinentCode string  `json:"continentCode"`
+		Country       string  `json:"country"`
+		CountryCode   string  `json:"countryCode"`
+		Region        string  `json:"region"`
+		RegionName    string  `json:"regionName"`
+		City          string  `json:"city"`
+		District      string  `json:"district"`
+		Zip           string  `json:"zip"`
+		Lat           float64 `json:"lat"`
+		Lon           float64 `json:"lon"`
+		Timezone      string  `json:"timezone"`
+		Offset        int     `json:"offset"`
+		Currency      string  `json:"currency"`
+		Isp           string  `json:"isp"`
+		Org           string  `json:"org"`
+		As            string  `json:"as"`
+		Asname        string  `json:"asname"`
+		Reverse       string  `json:"reverse"`
+		Mobile        bool    `json:"mobile"`
+		Proxy         bool    `json:"proxy"`
+		Hosting       bool    `json:"hosting"`
+		Query         string  `json:"query"`
+	}
+
+	bb, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var r RM
+	err = json.Unmarshal(bb, &r)
+	if err != nil {
+		return nil, err
+	}
+
 	return []prompb.Label{
 		{
 			Name:  "client_id",
 			Value: os.Getenv("PINGPG_CLIENTID"),
+		},
+		{
+			Name:  "public_ip",
+			Value: r.Query,
+		},
+		{
+			Name:  "isp",
+			Value: r.Isp,
+		},
+		{
+			Name:  "country",
+			Value: r.Country,
+		},
+		{
+			Name:  "region",
+			Value: r.RegionName,
+		},
+		{
+			Name:  "city",
+			Value: r.City,
+		},
+		{
+			Name:  "mobile",
+			Value: strconv.FormatBool(r.Mobile),
+		},
+		{
+			Name:  "proxy",
+			Value: strconv.FormatBool(r.Proxy),
+		},
+		{
+			Name:  "hosting",
+			Value: strconv.FormatBool(r.Hosting),
 		},
 	}, nil
 }
@@ -89,11 +170,26 @@ func publish(wr *prompb.WriteRequest) error {
 	req.Header.Add("X-Prometheus-Remote-Write-Version", "0.1.0")
 	req.SetBasicAuth("pingpg", os.Getenv("PINGPG_PASS"))
 
+	if os.Getenv("PINGPG_DEBUG") == "true" {
+		reqOut, _ := httputil.DumpRequestOut(req, true)
+		println(string(reqOut))
+	}
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
-	println(resp.Status)
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		respOut, _ := httputil.DumpResponse(resp, true)
+		return errors.New(string(respOut))
+	}
+
+	if os.Getenv("PINGPG_DEBUG") == "true" {
+		respOut, _ := httputil.DumpResponse(resp, true)
+		println(string(respOut))
+	}
+
 	return nil
 }
 
@@ -188,6 +284,7 @@ func probe() (*probing.Statistics, error) {
 	}
 	pinger.Count = 10
 	pinger.SetPrivileged(true)
+	pinger.Timeout = time.Second * 3
 
 	err = pinger.Run()
 	if err != nil {
