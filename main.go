@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/net-byte/go-gateway"
 	"github.com/pkg/errors"
 	probing "github.com/prometheus-community/pro-bing"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -56,7 +57,17 @@ func main() {
 }
 
 func getLabels() ([]prompb.Label, error) {
+	gwIP, err := gateway.DiscoverGatewayIPv4()
+	if err != nil {
+		return nil, err
+	}
+
 	resp, err := http.Get("http://ip-api.com/json/?fields=66846719")
+	if err != nil {
+		return nil, err
+	}
+
+	hn, err := os.Hostname()
 	if err != nil {
 		return nil, err
 	}
@@ -109,8 +120,16 @@ func getLabels() ([]prompb.Label, error) {
 			Value: os.Getenv("PINGPG_CLIENTID"),
 		},
 		{
+			Name:  "hostname",
+			Value: hn,
+		},
+		{
 			Name:  "public_ip",
 			Value: r.Query,
+		},
+		{
+			Name:  "gateway",
+			Value: gwIP.String(),
 		},
 		{
 			Name:  "isp",
