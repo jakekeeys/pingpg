@@ -7,10 +7,10 @@ ARG TARGETARCH
 
 WORKDIR /app/
 ADD . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o service main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-w -s" -o pingpg main.go
 
-FROM --platform=${TARGETPLATFORM:-linux/amd64} scratch
+FROM --platform=${TARGETPLATFORM:-linux/amd64} alpine
 WORKDIR /app/
-COPY --from=builder /app/service /app/service
+COPY --from=builder /app/pingpg /app/pingpg
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-ENTRYPOINT ["/app/service"]
+ENTRYPOINT ["/app/pingpg"]
