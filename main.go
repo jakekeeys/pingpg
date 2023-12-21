@@ -33,6 +33,9 @@ func main() {
 		s, err := probe()
 		if err != nil {
 			println(err.Error())
+			s = &probing.Statistics{
+				PacketLoss: 100,
+			}
 		}
 
 		wr := statisticsToWriteRequest(s)
@@ -46,6 +49,7 @@ func publishWithRetry(wr *prompb.WriteRequest) {
 	err := publish(wr)
 	if err != nil {
 		println(err.Error())
+		time.Sleep(time.Second * 2)
 		publishWithRetry(wr)
 	}
 }
