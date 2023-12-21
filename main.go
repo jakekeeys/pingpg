@@ -16,129 +16,42 @@ import (
 
 // TODO: discovery local gateway and publish ping metrics for it
 // TODO: detect wifi / eth
-// TODO: retry, publish historical metrics
-// TODO: impl using prom remote write
 // TODO: switch to OTEL remote write
 
 func main() {
+	wrb := make(chan *prompb.WriteRequest, 100)
+	go func() {
+		for {
+			select {
+			case wr := <-wrb:
+				publishWithRetry(wr)
+			}
+		}
+	}()
+
 	for {
-		err := collectAndPush()
+		s, err := probe()
 		if err != nil {
 			println(err.Error())
 		}
+
+		wr := statisticsToWriteRequest(s)
+		wrb <- wr
+
 		time.Sleep(time.Second * 10)
 	}
 }
 
-func collectAndPush() error {
-	pinger, err := probing.NewPinger("1.1.1.1")
+func publishWithRetry(wr *prompb.WriteRequest) {
+	err := publish(wr)
 	if err != nil {
-		return err
+		println(err.Error())
+		publishWithRetry(wr)
 	}
-	pinger.Count = 10
-	pinger.SetPrivileged(true)
+}
 
-	err = pinger.Run()
-	if err != nil {
-		return err
-	}
-
-	now := timestamp.FromTime(time.Now().UTC())
-	var r = prompb.WriteRequest{
-		Timeseries: []prompb.TimeSeries{
-			{
-				Labels: []prompb.Label{
-					{
-						Name:  "__name__",
-						Value: "min_rtt_ms",
-					},
-					{
-						Name:  "exported_job",
-						Value: os.Getenv("PINGPG_CLIENTID"),
-					},
-				},
-				Samples: []prompb.Sample{
-					{
-						Value:     float64(pinger.Statistics().MinRtt.Milliseconds()),
-						Timestamp: now,
-					},
-				},
-			},
-			{
-				Labels: []prompb.Label{
-					{
-						Name:  "__name__",
-						Value: "max_rtt_ms",
-					},
-					{
-						Name:  "exported_job",
-						Value: os.Getenv("PINGPG_CLIENTID"),
-					},
-				},
-				Samples: []prompb.Sample{
-					{
-						Value:     float64(pinger.Statistics().MaxRtt.Milliseconds()),
-						Timestamp: now,
-					},
-				},
-			},
-			{
-				Labels: []prompb.Label{
-					{
-						Name:  "__name__",
-						Value: "avg_rtt_ms",
-					},
-					{
-						Name:  "exported_job",
-						Value: os.Getenv("PINGPG_CLIENTID"),
-					},
-				},
-				Samples: []prompb.Sample{
-					{
-						Value:     float64(pinger.Statistics().AvgRtt.Milliseconds()),
-						Timestamp: now,
-					},
-				},
-			},
-			{
-				Labels: []prompb.Label{
-					{
-						Name:  "__name__",
-						Value: "std_dev_rtt_ns",
-					},
-					{
-						Name:  "exported_job",
-						Value: os.Getenv("PINGPG_CLIENTID"),
-					},
-				},
-				Samples: []prompb.Sample{
-					{
-						Value:     float64(pinger.Statistics().StdDevRtt.Milliseconds()),
-						Timestamp: now,
-					},
-				},
-			},
-			{
-				Labels: []prompb.Label{
-					{
-						Name:  "__name__",
-						Value: "packet_loss",
-					},
-					{
-						Name:  "exported_job",
-						Value: os.Getenv("PINGPG_CLIENTID"),
-					},
-				},
-				Samples: []prompb.Sample{
-					{
-						Value:     pinger.Statistics().PacketLoss,
-						Timestamp: now,
-					},
-				},
-			},
-		},
-	}
-	pb, err := proto.Marshal(&r)
+func publish(wr *prompb.WriteRequest) error {
+	pb, err := proto.Marshal(wr)
 	if err != nil {
 		return err
 	}
@@ -161,4 +74,118 @@ func collectAndPush() error {
 	}
 	println(resp.Status)
 	return nil
+}
+
+func statisticsToWriteRequest(s *probing.Statistics) *prompb.WriteRequest {
+	now := timestamp.FromTime(time.Now().UTC())
+	return &prompb.WriteRequest{
+		Timeseries: []prompb.TimeSeries{
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "min_rtt_ms",
+					},
+					{
+						Name:  "exported_job",
+						Value: os.Getenv("PINGPG_CLIENTID"),
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Value:     float64(s.MinRtt.Milliseconds()),
+						Timestamp: now,
+					},
+				},
+			},
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "max_rtt_ms",
+					},
+					{
+						Name:  "exported_job",
+						Value: os.Getenv("PINGPG_CLIENTID"),
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Value:     float64(s.MaxRtt.Milliseconds()),
+						Timestamp: now,
+					},
+				},
+			},
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "avg_rtt_ms",
+					},
+					{
+						Name:  "exported_job",
+						Value: os.Getenv("PINGPG_CLIENTID"),
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Value:     float64(s.AvgRtt.Milliseconds()),
+						Timestamp: now,
+					},
+				},
+			},
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "std_dev_rtt_ns",
+					},
+					{
+						Name:  "exported_job",
+						Value: os.Getenv("PINGPG_CLIENTID"),
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Value:     float64(s.StdDevRtt.Milliseconds()),
+						Timestamp: now,
+					},
+				},
+			},
+			{
+				Labels: []prompb.Label{
+					{
+						Name:  "__name__",
+						Value: "packet_loss",
+					},
+					{
+						Name:  "exported_job",
+						Value: os.Getenv("PINGPG_CLIENTID"),
+					},
+				},
+				Samples: []prompb.Sample{
+					{
+						Value:     s.PacketLoss,
+						Timestamp: now,
+					},
+				},
+			},
+		},
+	}
+}
+
+func probe() (*probing.Statistics, error) {
+	pinger, err := probing.NewPinger("1.1.1.1")
+	if err != nil {
+		return nil, err
+	}
+	pinger.Count = 10
+	pinger.SetPrivileged(true)
+
+	err = pinger.Run()
+	if err != nil {
+		return nil, err
+	}
+
+	return pinger.Statistics(), nil
 }
